@@ -1,0 +1,493 @@
+# gemma.cpp is a lightweight, standalone C++ inference engine for the Gemma
+# foundation models from Google.
+
+load("@rules_license//rules:license.bzl", "license")
+
+package(
+    default_applicable_licenses = [
+        "//:license",  # Placeholder comment, do not modify
+    ],
+    default_visibility = ["//visibility:public"],
+)
+
+license(
+    name = "license",
+    package_name = "gemma_cpp",
+)
+
+# Dual-licensed Apache 2 and 3-clause BSD.
+licenses(["notice"])
+
+exports_files(["LICENSE"])
+
+cc_library(
+    name = "ops",
+    textual_hdrs = [
+        "ops/ops-inl.h",
+        "ops/matmul-inl.h",
+        "ops/matvec-inl.h",
+    ],
+    deps = [
+        "//compression:compress",
+        "//compression:sfp",
+        "@hwy//:algo",
+        "@hwy//:dot",
+        "@hwy//:hwy",
+        "@hwy//:math",
+        "@hwy//:matvec",
+        "@hwy//:profiler",
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_test(
+    name = "ops_test",
+    size = "small",
+    timeout = "long",
+    srcs = ["ops/ops_test.cc"],
+    local_defines = ["HWY_IS_TEST"],
+    # for test_suite.
+    tags = ["hwy_ops_test"],
+    deps = [
+        ":ops",
+        "@googletest//:gtest_main",  # buildcleaner: keep
+        "@hwy//:hwy",
+        "@hwy//:hwy_test_util",
+        "@hwy//:nanobenchmark",
+    ],
+)
+
+cc_test(
+    name = "matvec_test",
+    size = "small",
+    timeout = "long",
+    srcs = ["ops/matvec_test.cc"],
+    local_defines = ["HWY_IS_TEST"],
+    # for test_suite.
+    tags = ["hwy_ops_test"],
+    deps = [
+        ":ops",
+        "@googletest//:gtest_main",  # buildcleaner: keep
+        "//compression:compress",
+        "@hwy//:hwy",
+        "@hwy//:hwy_test_util",
+        "@hwy//:nanobenchmark",
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_test(
+    name = "matmul_test",
+    size = "small",
+    timeout = "long",
+    srcs = ["ops/matmul_test.cc"],
+    local_defines = ["HWY_IS_TEST"],
+    # for test_suite.
+    tags = ["hwy_ops_test"],
+    deps = [
+        ":ops",
+        "@googletest//:gtest_main",  # buildcleaner: keep
+        "//compression:compress",
+        "@hwy//:hwy",
+        "@hwy//:hwy_test_util",
+        "@hwy//:nanobenchmark",
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_library(
+    name = "common",
+    srcs = ["gemma/common.cc"],
+    hdrs = [
+        "gemma/common.h",
+        "gemma/configs.h",
+    ],
+    deps = [
+        "//compression:compress",
+        "@hwy//:hwy",  # base.h
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_library(
+    name = "weights",
+    srcs = ["gemma/weights.cc"],
+    hdrs = ["gemma/weights.h"],
+    deps = [
+        ":common",
+        "//compression:compress",
+        "//compression:io",
+        "@hwy//:hwy",
+        "@hwy//:profiler",
+        "@hwy//:stats",
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_library(
+    name = "tokenizer",
+    srcs = ["gemma/tokenizer.cc"],
+    hdrs = ["gemma/tokenizer.h"],
+    deps = [
+        ":common",
+        "//compression:io",
+        "@hwy//:hwy",
+        "@hwy//:nanobenchmark",  # timer
+        "@hwy//:profiler",
+        "@com_google_sentencepiece//:sentencepiece_processor",
+    ],
+)
+
+cc_library(
+    name = "kv_cache",
+    srcs = ["gemma/kv_cache.cc"],
+    hdrs = ["gemma/kv_cache.h"],
+    deps = [
+        ":common",
+        "@hwy//:hwy",
+    ],
+)
+
+cc_library(
+    name = "gemma_lib",
+    srcs = [
+        "gemma/gemma.cc",
+        "gemma/instantiations/27b_bf16.cc",
+        "gemma/instantiations/27b_f32.cc",
+        "gemma/instantiations/27b_sfp.cc",
+        "gemma/instantiations/2b_bf16.cc",
+        "gemma/instantiations/2b_f32.cc",
+        "gemma/instantiations/2b_sfp.cc",
+        "gemma/instantiations/7b_bf16.cc",
+        "gemma/instantiations/7b_f32.cc",
+        "gemma/instantiations/7b_sfp.cc",
+        "gemma/instantiations/9b_bf16.cc",
+        "gemma/instantiations/9b_f32.cc",
+        "gemma/instantiations/9b_sfp.cc",
+        "gemma/instantiations/tiny_bf16.cc",
+        "gemma/instantiations/tiny_f32.cc",
+        "gemma/instantiations/tiny_sfp.cc",
+        "gemma/instantiations/gr2b_bf16.cc",
+        "gemma/instantiations/gr2b_f32.cc",
+        "gemma/instantiations/gr2b_sfp.cc",
+        "gemma/instantiations/gemma2_2b_bf16.cc",
+        "gemma/instantiations/gemma2_2b_f32.cc",
+        "gemma/instantiations/gemma2_2b_sfp.cc",
+    ],
+    hdrs = [
+        "gemma/activations.h",
+        "gemma/gemma.h",
+    ],
+    exec_properties = {
+        # Avoid linker OOMs when building with sanitizer instrumentation.
+        "mem": "28g",
+    },
+    textual_hdrs = [
+        "gemma/gemma-inl.h",
+        # Placeholder for internal file2, do not remove,
+    ],
+    deps = [
+        ":common",
+        ":ops",
+        ":tokenizer",
+        ":kv_cache",
+        ":weights",
+        "//compression:io",
+        "@hwy//:hwy",
+        "@hwy//:bit_set",
+        "@hwy//:matvec",
+        "@hwy//:nanobenchmark",  # timer
+        "@hwy//:profiler",
+        "@hwy//:thread_pool",
+        "@hwy//:topology",
+    ],
+)
+
+cc_library(
+    name = "cross_entropy",
+    srcs = ["evals/cross_entropy.cc"],
+    hdrs = ["evals/cross_entropy.h"],
+    deps = [
+        ":common",
+        ":gemma_lib",
+        "@hwy//:hwy",
+    ],
+)
+
+cc_library(
+    name = "args",
+    hdrs = ["util/args.h"],
+    deps = [
+        "//compression:io",
+        "@hwy//:hwy",
+    ],
+)
+
+cc_library(
+    name = "app",
+    hdrs = ["util/app.h"],
+    deps = [
+        ":args",
+        ":common",
+        ":gemma_lib",
+        "//compression:io",
+        "@hwy//:hwy",
+        "@hwy//:thread_pool",
+        "@hwy//:topology",
+    ],
+)
+
+cc_library(
+    name = "benchmark_helper",
+    srcs = ["evals/benchmark_helper.cc"],
+    hdrs = ["evals/benchmark_helper.h"],
+    deps = [
+        ":app",
+        ":args",
+        ":common",
+        ":cross_entropy",
+        ":gemma_lib",
+        ":kv_cache",
+        # Placeholder for internal dep, do not remove.,
+        "@benchmark//:benchmark",
+        "//compression:compress",
+        "@hwy//:hwy",
+        "@hwy//:nanobenchmark",
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_test(
+    name = "gemma_test",
+    srcs = ["evals/gemma_test.cc"],
+    # Requires model files
+    tags = [
+        "local",
+        "manual",
+        "no_tap",
+    ],
+    deps = [
+        ":benchmark_helper",
+        ":common",
+        ":gemma_lib",
+        ":tokenizer",
+        "@googletest//:gtest_main",
+        "@hwy//:hwy",
+        "@hwy//:hwy_test_util",
+    ],
+)
+
+cc_binary(
+    name = "gemma",
+    srcs = ["gemma/run.cc"],
+    deps = [
+        ":app",
+        ":args",
+        ":benchmark_helper",
+        ":common",
+        ":gemma_lib",
+        # Placeholder for internal dep, do not remove.,
+        "//compression:compress",
+        "@hwy//:hwy",
+        "@hwy//:nanobenchmark",
+        "@hwy//:profiler",
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_binary(
+    name = "single_benchmark",
+    srcs = ["evals/benchmark.cc"],
+    deps = [
+        ":app",
+        ":args",
+        ":benchmark_helper",
+        ":common",
+        ":cross_entropy",
+        ":gemma_lib",
+        "//compression:io",
+        "@hwy//:hwy",
+        "@hwy//:nanobenchmark",
+        "@hwy//:thread_pool",
+        "@nlohmann_json//:json",
+    ],
+)
+
+cc_binary(
+    name = "benchmarks",
+    srcs = ["evals/benchmarks.cc"],
+    deps = [
+        ":benchmark_helper",
+        "@benchmark//:benchmark",
+    ],
+)
+
+cc_binary(
+    name = "debug_prompt",
+    srcs = [
+        "evals/debug_prompt.cc",
+    ],
+    deps = [
+        ":app",
+        ":args",
+        ":benchmark_helper",
+        ":gemma_lib",
+        "//compression:io",
+        "@hwy//:hwy",
+        "@hwy//:thread_pool",
+        "@nlohmann_json//:json",
+    ],
+)
+
+cc_binary(
+    name = "gemma_mmlu",
+    srcs = ["evals/run_mmlu.cc"],
+    deps = [
+        ":app",
+        ":args",
+        ":benchmark_helper",
+        ":gemma_lib",
+        "//compression:io",
+        "@hwy//:hwy",
+        "@hwy//:profiler",
+        "@hwy//:thread_pool",
+        "@nlohmann_json//:json",
+    ],
+)
+
+cc_library(
+    name = "prompt",
+    hdrs = ["backprop/prompt.h"],
+    deps = [],
+)
+
+cc_library(
+    name = "sampler",
+    hdrs = ["backprop/sampler.h"],
+    deps = [
+        ":prompt",
+    ],
+)
+
+cc_library(
+    name = "backprop",
+    srcs = [
+        "backprop/backward.cc",
+        "backprop/forward.cc",
+    ],
+    hdrs = [
+        "backprop/activations.h",
+        "backprop/backward.h",
+        "backprop/backward-inl.h",
+        "backprop/forward.h",
+        "backprop/forward-inl.h",
+    ],
+    deps = [
+        ":common",
+        ":gemma_lib",
+        ":ops",
+        ":prompt",
+        ":weights",
+        "@hwy//:hwy",  # base.h
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_library(
+    name = "backprop_scalar",
+    hdrs = [
+        "backprop/activations.h",
+        "backprop/backward_scalar.h",
+        "backprop/common_scalar.h",
+        "backprop/forward_scalar.h",
+    ],
+    deps = [
+        ":common",
+        ":gemma_lib",
+        ":prompt",
+        "//compression:weights_raw",
+    ],
+)
+
+cc_test(
+    name = "backward_scalar_test",
+    size = "large",
+    srcs = [
+        "backprop/backward_scalar_test.cc",
+        "backprop/test_util.h",
+    ],
+    deps = [
+        ":backprop_scalar",
+        ":common",
+        ":gemma_lib",
+        ":prompt",
+        ":sampler",
+        "@googletest//:gtest_main",
+        "//compression:weights_raw",
+    ],
+)
+
+cc_test(
+    name = "backward_test",
+    size = "large",
+    srcs = [
+        "backprop/backward_test.cc",
+        "backprop/test_util.h",
+    ],
+    exec_properties = {
+        # Avoid linker OOMs when building with sanitizer instrumentation.
+        "mem": "28g",
+    },
+    deps = [
+        ":backprop",
+        ":backprop_scalar",
+        ":common",
+        ":gemma_lib",
+        ":ops",
+        ":sampler",
+        "@googletest//:gtest_main",
+        "//compression:weights_raw",
+        "@hwy//:hwy",
+        "@hwy//:hwy_test_util",
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_library(
+    name = "optimizer",
+    srcs = [
+        "backprop/optimizer.cc",
+    ],
+    hdrs = [
+        "backprop/optimizer.h",
+    ],
+    deps = [
+        ":common",
+        ":weights",
+        "//compression:compress",
+        "@hwy//:hwy",
+        "@hwy//:thread_pool",
+    ],
+)
+
+cc_test(
+    name = "optimize_test",
+    srcs = [
+        "backprop/optimize_test.cc",
+    ],
+    exec_properties = {
+        # Avoid linker OOMs when building with sanitizer instrumentation.
+        "mem": "28g",
+    },
+    deps = [
+        ":backprop",
+        ":common",
+        ":gemma_lib",
+        ":optimizer",
+        ":prompt",
+        ":sampler",
+        ":weights",
+        "@googletest//:gtest_main",
+        "@hwy//:thread_pool",
+    ],
+)
